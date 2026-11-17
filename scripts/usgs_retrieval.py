@@ -1,16 +1,25 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import requests
 import numpy as np
 import pandas as pd
 import datetime as dt
 from pathlib import Path
 from dataretrieval import waterdata
 
-API_PARAMS = {
+parameter_codes = {
     'discharge (cfs)':'00060',
     'gage height (ft)':'00065'
 }
+
+statistic_codes = {
+    'daily mean':'00003',
+    'continuous': '00011'
+}
+
+parameter_codes, _ = waterdata.get_reference_table("parameter-codes")
+statistic_codes, _ = waterdata.get_reference_table("statistic-codes")
 
 
 # -------------------- #
@@ -36,7 +45,7 @@ def get_continuous_flows(gage_id, start_year, end_year, start_month='01', end_mo
     RETURNS
     - df:               
     '''
-    parameter_code = API_PARAMS['discharge (cfs)']
+    parameter_code = parameter_codes['discharge (cfs)']
     dates = f'{start_year}-{start_month}-{start_day}T00:00:00Z/{end_year}-{end_month}-{end_day}T00:00:00Z'
         
     temp = []
