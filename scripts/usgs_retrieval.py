@@ -51,8 +51,8 @@ def get_continuous_flows(gage_id, start_year, end_year, start_month='01', end_mo
     cache.mkdir(exist_ok=True)
         
     # for multi-year data
-    if start_year-end_year>2:
-        for year in np.arange[start_year:1:end_year]:
+    if end_year-start_year>2:
+        for year in np.arange(start_year,end_year+1):
             year_path = cache / f'{gage_id}_{parameter_code}_{year}.parquet'
                         
             # if data has been retrieved already, read it from cache
@@ -125,14 +125,13 @@ def get_continuous_levels(gage_id, start_year, end_year, start_month='01', end_m
         parameter_codes['unit_of_measure'].str.contains('ft', case=False, na=False)
     parameter_code = parameter_codes.loc[mask, 'parameter_code'].item()
     
-    dates = f'{start_year}-{start_month}-{start_day}T00:00:00Z/{end_year}-{end_month}-{end_day}T00:00:00Z'
-        
     temp = []
     cache.mkdir(exist_ok=True)
         
     # for multi-year data
-    if start_year-end_year>2:
-        for year in np.arange[start_year:1:end_year]:
+    if end_year-start_year>2:
+        for year in np.arange(start_year,end_year+1):
+            dates = f'{year}-{start_month}-{start_day}T00:00:00Z/{year+1}-{end_month}-{end_day}T00:00:00Z'
             year_path = cache / f'{gage_id}_{parameter_code}_{year}.parquet'
                         
             # if data has been retrieved already, read it from cache
@@ -157,7 +156,9 @@ def get_continuous_levels(gage_id, start_year, end_year, start_month='01', end_m
             .reset_index(drop=True))
         
     else:
-        year_path = cache / f'{gage_id}_{parameter_code}_{start_year}.parquet'
+        dates = f'{start_year}-{start_month}-{start_day}T00:00:00Z/{end_year}-{end_month}-{end_day}T00:00:00Z'
+        span = start_year if start_year == end_year else f'{start_year}-{end_year}'
+        year_path = cache / f'{gage_id}_{parameter_code}_{span}.parquet'
         if year_path.exists():
             df = pd.read_parquet(year_path)
             print(f'Requested data successfully read from cached file:\t{year_path}')
