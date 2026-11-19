@@ -1,12 +1,16 @@
 '''
 usgs_retrieval
 --------------------
-This library is intended to simplify data collection from the USGS' Water Data for the Nation (WDFN) database
+This library is intended to simplify data collection, analysis, and vizualization
+from the USGS' Water Data for the Nation (WDFN) database. A free USGS API key is
+required to use this library.
 '''
 
+from multiprocessing.sharedctypes import Value
 import os
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt, ticker as mticker, dates as mdates
 from pathlib import Path
 from dataretrieval import waterdata
 
@@ -64,8 +68,10 @@ file_formats = {
 
 
 def _stat_label(stat_code):
-    '''Statistic code with its name, e.g. '00002 (min)': the api_stats key
-    where there is one, otherwise USGS's own statistic name.'''
+    '''
+    Statistic code with its name, e.g. '00002 (min)': the api_stats key
+    where there is one, otherwise USGS's own statistic name.
+    '''
     for key, code in api_stats.items():
         if code == stat_code:
             return f'{stat_code} ({key})'
@@ -395,4 +401,56 @@ class StreamGage:
         self.df = df.copy()
         self.md = md.copy()
 
-        return df, md
+
+# ---
+# functions
+# ---
+
+
+def plot_data(gage=None, size=(16, 9), save_path=None):
+    '''
+    Generate a plot for a single StreamGage object.
+    ===================
+    | gage:         StreamGage object (e.g. discharge data)
+    | size:         plot size (width, height)
+    | save_path:    filepath to save the plot to (optional; if omitted, the plot is closed)
+    ===================
+    Return:         StreamGage plot (or save_path, if provided)
+    '''
+    
+    if not isinstance(gage, StreamGage):
+        raise TypeError('Function `plot_data` needs a `StreamGage` object for `gage`.')
+    if gage.df is None:
+        raise ValueError('No data set for object `gage`; run `gage.retrieve()` first.')
+    data = gage.df[gage.value_column]
+    index = gage.df.index
+    # first and last dates as YYYY-MM-DD, for the title
+    first, last = f'{index[0]:%Y-%m-%d}', f'{index[-1]:%Y-%m-%d}'
+
+    fig, ax = plt.subplots(figsize=size, constrained_layout=True)
+
+    if gage.data_type=='continuous':
+        title = f'Continuous {gage.parameter} data @ station {gage.gage_id} ({first} to {last})'
+        ax.plot(index, data, color='b', linewidth=2)
+    elif gage.data_type=='daily':
+        # statistic's name from api_stats (e.g. '00003' -> 'mean'); the code itself if it has none
+        key = next((k for k, v in api_stats.items() if v == gage.stat_code), gage.stat_code)
+        title = f'Daily {key} {gage.parameter} data @ station {gage.gage_id} ({first} to {last})'
+        ax.plot(index, data, color='b', linewidth=2)
+    elif gage.data_type=='field observation':
+        title = f'Field observations of {gage.parameter} data @ station {gage.gage_id} ({first} to {last})'
+        ax.plot(index, data, 'o', color='b')
+
+    ax.set_xlabel(f'Date ({gage.timezone})')
+    ax.set_ylabel(gage.value_column)
+    if gage.parameter.lower() == 'discharge':
+        ax.set_yscale('log')
+    ax.grid(linestyle=':', linewidth=0.5, alpha=0.5)
+    fig.suptitle(title, fontsize=18)
+        
+    if save_path is not None:
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        return f'Figure saved to: {Path(save_path)}'
+    plt.close(fig)
+    return fig
