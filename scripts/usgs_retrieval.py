@@ -427,9 +427,9 @@ class StreamGage:
             joined[:-1] |= provisional[1:]
             joined[1:] |= provisional[:-1]
             if approved.any():
-                ax.plot(index, data.where(approved), color='b', label='Approved')
+                ax.plot(index, data.where(approved), color='#174A7C', label='Approved')
             if provisional.any():
-                ax.plot(index, data.where(joined), color='purple', linestyle='--', label='Provisional')
+                ax.plot(index, data.where(joined), color='#6A1148', linestyle='--', label='Provisional')
             ax.legend(loc='upper right')
 
         if self.data_type=='continuous':
