@@ -1,12 +1,11 @@
 '''
 usgs_retrieval
---------------------
+===================
 This library is intended to simplify data collection, analysis, and vizualization
 from the USGS' Water Data for the Nation (WDFN) database. A free USGS API key is
-required to use this library.
+required to use this library. See `docs/usgs_retrieval.md` for more details.
 '''
 
-from multiprocessing.sharedctypes import Value
 import os
 import numpy as np
 import pandas as pd
@@ -15,9 +14,9 @@ from pathlib import Path
 from dataretrieval import waterdata
 
 
-# -------------------- #
+# =================== #
 # import USGS API codes
-# -------------------- #
+# =================== #
 
 
 os.environ['API_USGS_PROGRESS'] = '0'
@@ -31,9 +30,9 @@ else:
     print('Connection to the USGS Water Data API successfully established.')
 
 
-# -------------------- #
+# =================== #
 # helpers
-# -------------------- #
+# =================== #
 
 
 # each observation type, with its name in the 'data_type' column of USGS's time-series metadata
@@ -116,7 +115,7 @@ class StreamGage:
         self.cache = Path(cache)
         self.cache.mkdir(parents=True, exist_ok=True)
 
-        # set by retrieve()
+        # set by get_data()
         self.param_code = None
         self.parameter = None
         self.unit = None
@@ -127,7 +126,7 @@ class StreamGage:
         self.df = None
         self.md = None
 
-    def retrieve(self, start, end=None, data_type='continuous', stat_code='00003', param_code='00060'):
+    def get_data(self, start, end=None, data_type='continuous', stat_code='00003', param_code='00060'):
         '''
         Retrieves water data from USGS WDFN API for a specified time range.
         ===================
@@ -140,10 +139,6 @@ class StreamGage:
         |               used for 'daily' only. defaults to '00003' (mean)
         | param_code:   USGS parameter code or a key in api_params (e.g., '00060' or 'discharge');
         |               defaults to '00060' (discharge)
-        ===================
-        Return
-        | df:           pandas DataFrame containing requested data
-        | md:           pandas DataFrame containing metadata for request
         '''
 
         # the checks below work on local variables; the object's attributes
@@ -400,57 +395,67 @@ class StreamGage:
         df = df[[self.value_column]]
         self.df = df.copy()
         self.md = md.copy()
-
-
-# ---
-# functions
-# ---
-
-
-def plot_data(gage=None, size=(16, 9), save_path=None):
-    '''
-    Generate a plot for a single StreamGage object.
-    ===================
-    | gage:         StreamGage object (e.g. discharge data)
-    | size:         plot size (width, height)
-    | save_path:    filepath to save the plot to (optional; if omitted, the plot is closed)
-    ===================
-    Return:         StreamGage plot (or save_path, if provided)
-    '''
-    
-    if not isinstance(gage, StreamGage):
-        raise TypeError('Function `plot_data` needs a `StreamGage` object for `gage`.')
-    if gage.df is None:
-        raise ValueError('No data set for object `gage`; run `gage.retrieve()` first.')
-    data = gage.df[gage.value_column]
-    index = gage.df.index
-    # first and last dates as YYYY-MM-DD, for the title
-    first, last = f'{index[0]:%Y-%m-%d}', f'{index[-1]:%Y-%m-%d}'
-
-    fig, ax = plt.subplots(figsize=size, constrained_layout=True)
-
-    if gage.data_type=='continuous':
-        title = f'Continuous {gage.parameter} data @ station {gage.gage_id} ({first} to {last})'
-        ax.plot(index, data, color='b', linewidth=2)
-    elif gage.data_type=='daily':
-        # statistic's name from api_stats (e.g. '00003' -> 'mean'); the code itself if it has none
-        key = next((k for k, v in api_stats.items() if v == gage.stat_code), gage.stat_code)
-        title = f'Daily {key} {gage.parameter} data @ station {gage.gage_id} ({first} to {last})'
-        ax.plot(index, data, color='b', linewidth=2)
-    elif gage.data_type=='field observation':
-        title = f'Field observations of {gage.parameter} data @ station {gage.gage_id} ({first} to {last})'
-        ax.plot(index, data, 'o', color='b')
-
-    ax.set_xlabel(f'Date ({gage.timezone})')
-    ax.set_ylabel(gage.value_column)
-    if gage.parameter.lower() == 'discharge':
-        ax.set_yscale('log')
-    ax.grid(linestyle=':', linewidth=0.5, alpha=0.5)
-    fig.suptitle(title, fontsize=18)
         
-    if save_path is not None:
-        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+    def plot_data(self, size=(16,9), save_path=None):
+        '''
+        Generate a plot for a single StreamGage object.
+        ===================
+        | size:         plot size (optional; if omitted, default = 16x9)
+        | save_path:    filepath to save the plot to (optional; if omitted, the plot is closed)
+        ===================
+        Return:         StreamGage plot (or save_path, if provided)
+        '''
+        
+        if self.df is None:
+            raise ValueError(f'No data set for object `{self.gage_id}`; run `get_data()` first.')
+        
+        data = self.df[self.value_column]
+        index = self.df.index
+        # first and last dates as YYYY-MM-DD, for the title
+        first, last = f'{index[0]:%Y-%m-%d}', f'{index[-1]:%Y-%m-%d}'
+        
+        fig, ax = plt.subplots(figsize=size, constrained_layout=True)
+
+        def plot_by_status():
+            '''Approved values as a solid blue line, the rest (provisional) as a dashed purple line.'''
+            # numpy arrays, so masks line up by position even if a time repeats in the index
+            approved = self.md['approval_status'].to_numpy() == 'Approved'
+            provisional = ~approved
+            # widen the provisional mask by one value on each side, so the dashed
+            # line joins the solid line instead of leaving a gap where they meet
+            joined = provisional.copy()
+            joined[:-1] |= provisional[1:]
+            joined[1:] |= provisional[:-1]
+            if approved.any():
+                ax.plot(index, data.where(approved), color='b', label='Approved')
+            if provisional.any():
+                ax.plot(index, data.where(joined), color='purple', linestyle='--', label='Provisional')
+            ax.legend(loc='upper right')
+
+        if self.data_type=='continuous':
+            title = f'Continuous {self.parameter} data @ station {self.gage_id} ({first} to {last})'
+            plot_by_status()
+        elif self.data_type=='daily':
+            # statistic's name from api_stats (e.g. '00003' -> 'mean'); the code itself if it has none
+            key = next((k for k, v in api_stats.items() if v == self.stat_code), self.stat_code)
+            title = f'Daily {key} {self.parameter} data @ station {self.gage_id} ({first} to {last})'
+            plot_by_status()
+        elif self.data_type=='field observation':
+            title = f'Field observations of {self.parameter} data @ station {self.gage_id} ({first} to {last})'
+            ax.plot(index, data, 'o', color='#Df4D4D')
+            
+        ax.set_xlabel(f'Date ({self.timezone})')
+        ax.set_ylabel(self.value_column)
+        if self.parameter.lower() == 'discharge':
+            ax.set_yscale('log')
+        ax.grid(linestyle=':', linewidth=0.5, alpha=0.5)
+        fig.suptitle(title, fontsize=18)
+            
+        # return plot and, if provided, save figure to save_path
+        if save_path is not None:
+            fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close(fig)
+            return f'Figure saved to: {Path(save_path)}'
         plt.close(fig)
-        return f'Figure saved to: {Path(save_path)}'
-    plt.close(fig)
-    return fig
+        return fig
+
